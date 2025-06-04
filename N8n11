@@ -1,0 +1,1115 @@
+# Guide des Nœuds Spécialisés n8n - Documentation Expert
+
+## HTTP Request
+
+### Définition
+Le nœud HTTP Request est l'un des nœuds les plus polyvalents de n8n, permettant d'effectuer des requêtes HTTP vers n'importe quelle API REST ou service web. Il constitue le pont principal entre n8n et le monde extérieur.
+
+### Configuration principale
+
+#### Méthodes HTTP supportées
+- **GET** : Récupération de données
+- **POST** : Création de ressources
+- **PUT** : Mise à jour complète
+- **PATCH** : Mise à jour partielle
+- **DELETE** : Suppression de ressources
+- **HEAD** : Récupération des en-têtes uniquement
+- **OPTIONS** : Découverte des méthodes supportées
+
+#### Paramètres essentiels
+```javascript
+{
+  "method": "POST",
+  "url": "https://api.example.com/users",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {{ $env.API_TOKEN }}"
+  },
+  "body": {
+    "name": "{{ $json.name }}",
+    "email": "{{ $json.email }}"
+  }
+}
+```
+
+### Authentification avancée
+
+#### Bearer Token
+```javascript
+Headers: {
+  "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+#### API Key (Query Parameter)
+```javascript
+URL: "https://api.service.com/data?api_key={{ $env.API_KEY }}"
+```
+
+#### Basic Authentication
+```javascript
+Headers: {
+  "Authorization": "Basic {{ btoa($env.USERNAME + ':' + $env.PASSWORD) }}"
+}
+```
+
+#### Custom Headers
+```javascript
+Headers: {
+  "X-API-Key": "{{ $env.CUSTOM_API_KEY }}",
+  "X-Client-ID": "{{ $env.CLIENT_ID }}"
+}
+```
+
+### Gestion des réponses
+
+#### Options de réponse
+- **Response Format** : JSON, Text, Binary
+- **Full Response** : Inclut headers, status code
+- **Ignore SSL Issues** : Pour les certificats auto-signés
+- **Follow Redirects** : Gestion automatique des redirections
+
+#### Traitement des erreurs HTTP
+```javascript
+// Configuration pour continuer malgré les erreurs 4xx/5xx
+{
+  "continueOnFail": true,
+  "options": {
+    "allowUnauthorizedCerts": true,
+    "followRedirect": true,
+    "ignoreHttpStatusErrors": true
+  }
+}
+```
+
+### Cas d'usage avancés
+
+#### Pagination automatique
+```javascript
+// Premier appel
+URL: "https://api.service.com/users?page=1&limit=100"
+
+// Logique de pagination dans un loop
+URL: "https://api.service.com/users?page={{ $json.current_page + 1 }}&limit=100"
+```
+
+#### Upload de fichiers
+```javascript
+{
+  "method": "POST",
+  "url": "https://api.service.com/upload",
+  "headers": {
+    "Content-Type": "multipart/form-data"
+  },
+  "body": {
+    "file": "{{ $binary.file }}"
+  }
+}
+```
+
+#### Retry automatique
+```javascript
+{
+  "retryOnFail": {
+    "enabled": true,
+    "maxRetries": 3,
+    "waitBetweenRetries": 1000
+  }
+}
+```
+
+### Optimisation et performance
+- **Connection Keep-Alive** : Réutilisation des connexions TCP
+- **Timeout Configuration** : Éviter les blocages
+- **Compression** : Gzip automatique pour les gros payloads
+- **Connection Pool** : Gestion efficace des connexions multiples
+
+## Webhook
+
+### Définition
+Le nœud Webhook crée un endpoint HTTP unique permettant de recevoir des données externes et de déclencher l'exécution du workflow. Il constitue l'interface d'entrée principale pour les intégrations push.
+
+### Types de Webhook
+
+#### Webhook standard
+- **URL fixe** générée automatiquement
+- **Méthodes** : GET, POST, PUT, DELETE supportées
+- **Persistance** : URL stable entre les redémarrages
+
+#### Webhook with authentication
+- **Authentification** : Basic, Header, Query parameter
+- **Sécurisation** : Protection contre les accès non autorisés
+- **Validation** : Vérification des signatures
+
+### Configuration détaillée
+
+#### Paramètres de base
+```javascript
+{
+  "httpMethod": "POST",
+  "path": "webhook-unique-path",
+  "responseMode": "onReceived", // ou "lastNode"
+  "options": {
+    "rawBody": false,
+    "allowedOrigins": "*"
+  }
+}
+```
+
+#### Authentification Webhook
+```javascript
+{
+  "authentication": "headerAuth",
+  "headerAuth": {
+    "name": "X-API-Key",
+    "value": "{{ $env.WEBHOOK_SECRET }}"
+  }
+}
+```
+
+#### Validation de signature
+```javascript
+// Exemple GitHub Webhook
+{
+  "options": {
+    "rawBody": true
+  },
+  // Dans un nœud Code suivant
+  "validationCode": `
+    const crypto = require('crypto');
+    const signature = $webhook.headers['x-hub-signature-256'];
+    const payload = $webhook.body;
+    const secret = $env.GITHUB_WEBHOOK_SECRET;
+    
+    const expectedSignature = 'sha256=' + 
+      crypto.createHmac('sha256', secret)
+        .update(payload)
+        .digest('hex');
+    
+    if (signature !== expectedSignature) {
+      throw new Error('Invalid signature');
+    }
+  `
+}
+```
+
+### Gestion des réponses
+
+#### Response immediat
+```javascript
+{
+  "responseMode": "onReceived",
+  "responseData": {
+    "status": "received",
+    "timestamp": "{{ new Date().toISOString() }}"
+  }
+}
+```
+
+#### Response après traitement
+```javascript
+{
+  "responseMode": "lastNode",
+  // La réponse sera celle du dernier nœud exécuté
+}
+```
+
+### Cas d'usage spécialisés
+
+#### Webhook pour formulaires web
+```javascript
+// Réception de données de formulaire
+{
+  "httpMethod": "POST",
+  "options": {
+    "rawBody": false // Parse automatique des form-data
+  }
+}
+```
+
+#### Webhook pour fichiers upload
+```javascript
+{
+  "options": {
+    "rawBody": true, // Conservation du binaire
+    "maxFileSize": "10MB"
+  }
+}
+```
+
+#### Webhook avec CORS
+```javascript
+{
+  "options": {
+    "allowedOrigins": "https://myapp.com",
+    "allowedMethods": ["POST", "OPTIONS"],
+    "allowedHeaders": ["Content-Type", "Authorization"]
+  }
+}
+```
+
+### Sécurité et bonnes pratiques
+- **URLs secrètes** : Utilisation de paths imprévisibles
+- **Rate limiting** : Protection contre le spam
+- **Validation stricte** : Contrôle des données entrantes
+- **Logging** : Traçabilité des appels webhook
+
+## Set
+
+### Définition
+Le nœud Set permet de modifier, ajouter ou supprimer des propriétés dans les données JSON qui transitent dans le workflow. Il constitue l'outil principal de transformation de données.
+
+### Modes d'opération
+
+#### Mode Manuel
+Configuration via l'interface graphique avec des champs prédéfinis.
+
+```javascript
+// Configuration GUI
+{
+  "values": [
+    {
+      "name": "user_id",
+      "value": "{{ $json.id }}"
+    },
+    {
+      "name": "full_name", 
+      "value": "{{ $json.firstName + ' ' + $json.lastName }}"
+    },
+    {
+      "name": "created_at",
+      "value": "{{ new Date().toISOString() }}"
+    }
+  ]
+}
+```
+
+#### Mode Expression
+Utilisation de JavaScript pour des transformations complexes.
+
+```javascript
+// Mode expression
+{
+  "jsExpression": `
+    return {
+      ...items[0].json,
+      computed_field: items[0].json.value1 * items[0].json.value2,
+      status: items[0].json.score > 80 ? 'passed' : 'failed',
+      processed_at: new Date().toISOString()
+    };
+  `
+}
+```
+
+### Opérations sur les données
+
+#### Ajout de propriétés
+```javascript
+{
+  "values": [
+    {
+      "name": "new_property",
+      "value": "{{ $json.existing_property.toUpperCase() }}"
+    }
+  ]
+}
+```
+
+#### Modification de propriétés existantes
+```javascript
+{
+  "values": [
+    {
+      "name": "price",
+      "value": "{{ Math.round($json.price * 1.2) }}" // +20%
+    }
+  ]
+}
+```
+
+#### Suppression de propriétés
+```javascript
+{
+  "options": {
+    "includeOtherFields": false // Garde seulement les champs configurés
+  }
+}
+```
+
+#### Renommage de propriétés
+```javascript
+{
+  "values": [
+    {
+      "name": "user_name", // Nouveau nom
+      "value": "{{ $json.username }}" // Ancienne valeur
+    }
+  ],
+  "options": {
+    "includeOtherFields": true
+  }
+}
+```
+
+### Transformations avancées
+
+#### Restructuration d'objets
+```javascript
+// Mode expression pour restructuration complexe
+{
+  "jsExpression": `
+    const input = items[0].json;
+    return {
+      user: {
+        id: input.user_id,
+        profile: {
+          name: input.name,
+          email: input.email
+        }
+      },
+      metadata: {
+        created: new Date(),
+        source: 'n8n'
+      }
+    };
+  `
+}
+```
+
+#### Calculs sur arrays
+```javascript
+{
+  "values": [
+    {
+      "name": "total_amount",
+      "value": "{{ $json.items.reduce((sum, item) => sum + item.price, 0) }}"
+    },
+    {
+      "name": "item_count",
+      "value": "{{ $json.items.length }}"
+    }
+  ]
+}
+```
+
+#### Formatage de dates
+```javascript
+{
+  "values": [
+    {
+      "name": "formatted_date",
+      "value": "{{ $json.timestamp.toDateTime().toFormat('dd/MM/yyyy HH:mm') }}"
+    }
+  ]
+}
+```
+
+### Cas d'usage spécialisés
+
+#### Préparation pour API
+```javascript
+// Transformation pour API externe
+{
+  "values": [
+    {
+      "name": "external_id",
+      "value": "{{ 'EXT_' + $json.internal_id }}"
+    },
+    {
+      "name": "api_payload",
+      "value": "{{ JSON.stringify({name: $json.name, type: $json.category}) }}"
+    }
+  ]
+}
+```
+
+#### Nettoyage de données
+```javascript
+{
+  "jsExpression": `
+    const clean = (str) => str ? str.trim().toLowerCase() : '';
+    const input = items[0].json;
+    
+    return {
+      email: clean(input.email),
+      name: clean(input.name),
+      phone: input.phone ? input.phone.replace(/[^0-9]/g, '') : null
+    };
+  `
+}
+```
+
+### Bonnes pratiques
+- **Validation** : Vérifier l'existence des propriétés avant transformation
+- **Performance** : Éviter les calculs lourds dans les expressions
+- **Lisibilité** : Préférer plusieurs nœuds Set simples à un complexe
+- **Type safety** : Vérifier les types avant les conversions
+
+## Code
+
+### Définition
+Le nœud Code permet l'exécution de JavaScript personnalisé dans le workflow, offrant une flexibilité maximale pour les transformations de données complexes et la logique métier avancée.
+
+### Environnement d'exécution
+
+#### Variables disponibles
+```javascript
+// Données d'entrée
+$input.all()        // Tous les items d'entrée
+$input.first()      // Premier item
+$input.last()       // Dernier item
+$input.item         // Item courant (en mode item)
+
+// Utilitaires
+$json              // Raccourci pour $input.item.json
+$binary            // Raccourci pour $input.item.binary
+$itemIndex         // Index de l'item courant
+$env               // Variables d'environnement
+$workflow          // Informations du workflow
+$execution         // Informations de l'exécution
+```
+
+#### Bibliothèques intégrées
+```javascript
+// Manipulation de dates
+const moment = require('moment');
+const luxon = require('luxon');
+
+// Utilitaires
+const _ = require('lodash');
+const axios = require('axios');
+
+// Crypto et hash
+const crypto = require('crypto');
+
+// Manipulation de fichiers
+const fs = require('fs');
+const path = require('path');
+```
+
+### Patterns de développement
+
+#### Traitement d'un seul item
+```javascript
+// Mode: Run Once for Each Item
+const inputData = $input.item.json;
+
+const processedData = {
+  ...inputData,
+  processed_at: new Date().toISOString(),
+  hash: crypto.createHash('md5').update(inputData.content).digest('hex')
+};
+
+return { json: processedData };
+```
+
+#### Traitement de tous les items
+```javascript
+// Mode: Run Once for All Items
+const allItems = $input.all();
+const results = [];
+
+for (const item of allItems) {
+  const processed = {
+    original_id: item.json.id,
+    computed_value: item.json.value * 2,
+    batch_processed: true
+  };
+  results.push({ json: processed });
+}
+
+return results;
+```
+
+### Manipulations avancées
+
+#### Agrégation de données
+```javascript
+const items = $input.all();
+const summary = {
+  total_count: items.length,
+  total_amount: items.reduce((sum, item) => sum + (item.json.amount || 0), 0),
+  categories: [...new Set(items.map(item => item.json.category))],
+  processed_at: new Date().toISOString()
+};
+
+return [{ json: summary }];
+```
+
+#### Validation et nettoyage
+```javascript
+const data = $input.item.json;
+
+// Fonction de validation
+function validateEmail(email) {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}
+
+// Nettoyage et validation
+const cleanData = {
+  email: data.email ? data.email.toLowerCase().trim() : null,
+  name: data.name ? data.name.trim() : null,
+  age: parseInt(data.age) || null
+};
+
+// Validation
+if (cleanData.email && !validateEmail(cleanData.email)) {
+  throw new Error(`Invalid email: ${cleanData.email}`);
+}
+
+return { json: cleanData };
+```
+
+#### Appels API intégrés
+```javascript
+// Appel API externe dans le code
+const response = await fetch('https://api.service.com/data', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${$env.API_TOKEN}`
+  },
+  body: JSON.stringify($input.item.json)
+});
+
+const result = await response.json();
+
+return { 
+  json: {
+    original: $input.item.json,
+    api_response: result,
+    processed_at: new Date()
+  }
+};
+```
+
+### Gestion des fichiers binaires
+
+#### Lecture de fichier binaire
+```javascript
+const binaryData = $input.item.binary.file;
+const buffer = Buffer.from(binaryData.data, 'base64');
+
+// Traitement du fichier
+const fileSize = buffer.length;
+const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+return {
+  json: {
+    filename: binaryData.fileName,
+    size: fileSize,
+    hash: fileHash,
+    mime_type: binaryData.mimeType
+  },
+  binary: {
+    processed_file: binaryData // Passer le fichier au nœud suivant
+  }
+};
+```
+
+#### Création de fichier binaire
+```javascript
+const content = JSON.stringify($input.item.json, null, 2);
+const buffer = Buffer.from(content, 'utf8');
+
+return {
+  json: {
+    message: 'File created successfully'
+  },
+  binary: {
+    output_file: {
+      data: buffer.toString('base64'),
+      fileName: 'output.json',
+      mimeType: 'application/json'
+    }
+  }
+};
+```
+
+### Patterns de contrôle
+
+#### Logique conditionnelle complexe
+```javascript
+const data = $input.item.json;
+let status = 'unknown';
+let action = null;
+
+// Logique métier complexe
+if (data.score >= 90) {
+  status = 'excellent';
+  action = 'promote';
+} else if (data.score >= 70) {
+  status = 'good';
+  action = 'maintain';
+} else if (data.score >= 50) {
+  status = 'average';
+  action = 'improve';
+} else {
+  status = 'poor';
+  action = 'review';
+}
+
+// Logique additionnelle
+if (data.urgent === true) {
+  action = 'priority_' + action;
+}
+
+return {
+  json: {
+    ...data,
+    computed_status: status,
+    recommended_action: action,
+    evaluation_date: new Date().toISOString()
+  }
+};
+```
+
+#### Gestion d'erreurs personnalisée
+```javascript
+try {
+  const data = $input.item.json;
+  
+  // Validation stricte
+  if (!data.required_field) {
+    throw new Error('Required field missing: required_field');
+  }
+  
+  // Traitement risqué
+  const result = complexProcessing(data);
+  
+  return { json: result };
+  
+} catch (error) {
+  // Log de l'erreur
+  console.error('Processing failed:', error.message);
+  
+  // Retour d'erreur structuré
+  return {
+    json: {
+      error: true,
+      message: error.message,
+      original_data: $input.item.json,
+      failed_at: new Date().toISOString()
+    }
+  };
+}
+```
+
+### Optimisation et performance
+
+#### Traitement par batch optimisé
+```javascript
+const BATCH_SIZE = 100;
+const allItems = $input.all();
+const results = [];
+
+// Traitement par chunks pour éviter les timeouts
+for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+  const batch = allItems.slice(i, i + BATCH_SIZE);
+  
+  const batchResults = batch.map(item => ({
+    json: {
+      ...item.json,
+      batch_index: Math.floor(i / BATCH_SIZE),
+      processed: true
+    }
+  }));
+  
+  results.push(...batchResults);
+  
+  // Pause entre les batches si nécessaire
+  if (i + BATCH_SIZE < allItems.length) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+return results;
+```
+
+### Bonnes pratiques
+- **Gestion d'erreurs** : Toujours encapsuler le code critique dans try/catch
+- **Performance** : Éviter les boucles infinies et les opérations coûteuses
+- **Lisibilité** : Commenter le code complexe pour la maintenance
+- **Sécurité** : Valider les entrées avant traitement
+- **Debugging** : Utiliser console.log pour le débogage (visible dans les logs)
+
+## IF
+
+### Définition
+Le nœud IF permet d'implémenter une logique conditionnelle dans les workflows, dirigeant l'exécution vers différents chemins selon l'évaluation de conditions booléennes.
+
+### Structure de base
+
+#### Configuration simple
+```javascript
+{
+  "conditions": {
+    "options": {
+      "caseSensitive": true,
+      "leftValue": "{{ $json.status }}",
+      "operation": "equal",
+      "rightValue": "active"
+    }
+  }
+}
+```
+
+#### Sorties du nœud
+- **True** : Condition remplie
+- **False** : Condition non remplie
+
+### Types de conditions
+
+#### Comparaisons de valeurs
+```javascript
+// Égalité
+{
+  "leftValue": "{{ $json.age }}",
+  "operation": "equal",
+  "rightValue": "25"
+}
+
+// Supérieur/Inférieur
+{
+  "leftValue": "{{ $json.score }}",
+  "operation": "larger",
+  "rightValue": "80"
+}
+
+// Contient
+{
+  "leftValue": "{{ $json.email }}",
+  "operation": "contains",
+  "rightValue": "@company.com"
+}
+```
+
+#### Vérifications d'existence
+```javascript
+// Existe
+{
+  "leftValue": "{{ $json.optional_field }}",
+  "operation": "isNotEmpty"
+}
+
+// N'existe pas
+{
+  "leftValue": "{{ $json.deprecated_field }}",
+  "operation": "isEmpty"
+}
+```
+
+#### Expressions booléennes
+```javascript
+{
+  "leftValue": "{{ $json.age >= 18 && $json.verified === true }}",
+  "operation": "equal",
+  "rightValue": "true"
+}
+```
+
+### Conditions multiples
+
+#### AND Logic
+```javascript
+{
+  "conditions": {
+    "combineOperation": "all", // Toutes les conditions
+    "conditions": [
+      {
+        "leftValue": "{{ $json.status }}",
+        "operation": "equal", 
+        "rightValue": "active"
+      },
+      {
+        "leftValue": "{{ $json.age }}",
+        "operation": "larger",
+        "rightValue": "18"
+      }
+    ]
+  }
+}
+```
+
+#### OR Logic
+```javascript
+{
+  "conditions": {
+    "combineOperation": "any", // Au moins une condition
+    "conditions": [
+      {
+        "leftValue": "{{ $json.priority }}",
+        "operation": "equal",
+        "rightValue": "high"
+      },
+      {
+        "leftValue": "{{ $json.urgent }}",
+        "operation": "equal",
+        "rightValue": "true"
+      }
+    ]
+  }
+}
+```
+
+### Cas d'usage avancés
+
+#### Validation de données
+```javascript
+// Vérification d'email valide
+{
+  "leftValue": "{{ /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($json.email) }}",
+  "operation": "equal",
+  "rightValue": "true"
+}
+```
+
+#### Logique métier
+```javascript
+// Éligibilité pour un service
+{
+  "conditions": {
+    "combineOperation": "all",
+    "conditions": [
+      {
+        "leftValue": "{{ $json.subscription_active }}",
+        "operation": "equal",
+        "rightValue": "true"
+      },
+      {
+        "leftValue": "{{ $json.usage_limit }}",
+        "operation": "smaller",
+        "rightValue": "{{ $json.current_usage }}"
+      }
+    ]
+  }
+}
+```
+
+#### Conditions temporelles
+```javascript
+// Vérification de date d'expiration
+{
+  "leftValue": "{{ new Date($json.expires_at) > new Date() }}",
+  "operation": "equal",
+  "rightValue": "true"
+}
+
+// Jour de la semaine
+{
+  "leftValue": "{{ new Date().getDay() }}",
+  "operation": "equal",
+  "rightValue": "1" // Lundi
+}
+```
+
+### Patterns d'architecture
+
+#### Validation en cascade
+```
+Input → IF (Required Fields) → True → IF (Valid Format) → True → Process
+                ↓ False                    ↓ False
+              Error                      Format Error
+```
+
+#### Routing par priorité
+```
+Input → IF (High Priority) → True → Urgent Process
+          ↓ False
+        IF (Medium Priority) → True → Normal Process
+          ↓ False
+        Low Priority Process
+```
+
+### Bonnes pratiques
+- **Expressions simples** : Éviter la logique trop complexe dans les conditions
+- **Nommage clair** : Utiliser des noms explicites pour les branches
+- **Validation** : Toujours vérifier l'existence des propriétés avant comparaison
+- **Performance** : Placer les conditions les plus probables en premier
+
+## Switch
+
+### Définition
+Le nœud Switch permet de router les données vers différents chemins selon la valeur d'une expression, offrant une alternative plus élégante au chaînage de nœuds IF pour les logiques multi-branches.
+
+### Configuration de base
+
+#### Structure principale
+```javascript
+{
+  "mode": "expression", // ou "rules"
+  "expression": "{{ $json.category }}",
+  "outputs": [
+    "electronics",
+    "clothing", 
+    "books",
+    "default"
+  ]
+}
+```
+
+#### Mode Rules
+```javascript
+{
+  "mode": "rules",
+  "rules": [
+    {
+      "operation": "equal",
+      "value": "VIP",
+      "output": 0
+    },
+    {
+      "operation": "equal", 
+      "value": "Premium",
+      "output": 1
+    },
+    {
+      "operation": "equal",
+      "value": "Standard", 
+      "output": 2
+    }
+  ],
+  "fallbackOutput": 3 // Sortie par défaut
+}
+```
+
+### Patterns de routage
+
+#### Routage par type
+```javascript
+// Expression: {{ $json.data_type }}
+// Sorties: ["user", "order", "product", "other"]
+
+// Les données sont routées automatiquement selon data_type
+```
+
+#### Routage par valeur numérique
+```javascript
+// Expression pour scoring
+{
+  "mode": "expression",
+  "expression": `{{
+    $json.score >= 90 ? 'excellent' :
+    $json.score >= 70 ? 'good' :
+    $json.score >= 50 ? 'average' : 'poor'
+  }}`,
+  "outputs": ["excellent", "good", "average", "poor"]
+}
+```
+
+#### Routage par conditions complexes
+```javascript
+{
+  "mode": "rules",
+  "rules": [
+    {
+      "operation": "expression",
+      "value": "{{ $json.age >= 18 && $json.verified === true }}",
+      "output": 0 // Adulte vérifié
+    },
+    {
+      "operation": "expression",
+      "value": "{{ $json.age >= 18 && $json.verified !== true }}",
+      "output": 1 // Adulte non vérifié
+    },
+    {
+      "operation": "expression", 
+      "value": "{{ $json.age < 18 }}",
+      "output": 2 // Mineur
+    }
+  ],
+  "fallbackOutput": 3 // Cas d'erreur
+}
+```
+
+### Cas d'usage spécialisés
+
+#### Tri par priorité
+```javascript
+// Expression de priorité dynamique
+{
+  "expression": `{{
+    $json.urgent === true ? 'priority_1' :
+    $json.important === true ? 'priority_2' :
+    $json.deadline && new Date($json.deadline) < new Date(Date.now() + 24*60*60*1000) ? 'priority_3' :
+    'standard'
+  }}`,
+  "outputs": ["priority_1", "priority_2", "priority_3", "standard"]
+}
+```
+
+#### Routage géographique
+```javascript
+// Routage par région
+{
+  "mode": "rules",
+  "rules": [
+    {
+      "operation": "contains",
+      "value": "FR|BE|CH",
+      "regex": true,
+      "field": "{{ $json.country_code }}",
+      "output": 0 // Europe francophone
+    },
+    {
+      "operation": "contains", 
+      "value": "US|CA",
+      "regex": true,
+      "field": "{{ $json.country_code }}",
+      "output": 1 // Amérique du Nord
+    }
+  ],
+  "fallbackOutput": 2 // Autres régions
+}
+```
+
+#### Workflow par étapes
+```javascript
+// Gestion d'états de processus
+{
+  "expression": "{{ $json.process_status }}",
+  "outputs": [
+    "draft",      // 0 - Brouillon
+    "review",     // 1 - En révision  
+    "approved",   // 2 - Approuvé
+    "published",  // 3 - Publié
+    "archived"    // 4 - Archivé
+  ]
+}
+```
+
+### Architecture avec Switch
+
+#### Pattern Hub & Spoke
+```
+Input → Switch (by type) → User Process
+                        → Order Process  
+                        → Product Process
+                        → Error Handler
+```
+
+#### Pattern Pipeline by Priority
+```
+Input → Switch (by priority) → Urgent Pipeline → Notification
+                            → Normal Pipeline → Queue
+                            → Low Pipeline → Batch Process
+```
+
+### Optimisation
+
+#### Performances
+- **Index-based routing** : Utiliser des indices numériques quand possible
+- **Regex optimization** : Limiter l'usage des expressions régulières
+- **Fallback strategy** : Toujours définir une sortie par défaut
+
+#### Maintenance
+- **Documentation** : Documenter chaque sortie et sa logique
+- **Naming convention** : Noms explicites pour les sorties
+- **Testing** : Tester tous les chemins possibles
+
+### Bonnes pratiques
+- **Exhaustivité** : Couvrir tous les cas possibles avec un fallback
+- **Simplicité** : Préférer des expressions simples et lisibles  
+- **Monitoring** : Surveiller la distribution du trafic entre les sorties
+- **Évolutivité** : Concevoir pour faciliter l'ajout de nouvelles branches
